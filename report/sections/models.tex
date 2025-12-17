@@ -7,7 +7,7 @@
 
 Full variable imputation requires learning the conditional distribution $p(\text{networth} \mid \text{covariates})$ from the donor survey (SCF) and then sampling from this distribution conditioning on each recipient record (CPS). This task calls for the implementation of generative models that can both estimate conditional densities and produce stochastic samples from them based on given covariates.
 
-We evaluate three deep generative approaches, each representing a distinct paradigm for conditional density estimation: RealNVP, Mixture Density Networks, and TabSyn. As a baseline, we include Quantile Random Forests (Section~\ref{sec:qrf}), which prior work established as the best-performing traditional method for this task. For notational convenience, let $x$ denote the vector of covariates (demographic and income variables) and $y$ the target variable (net worth). All methods share the goal of learning $p(y \mid x)$ rather than just $\mathbb{E}[y \mid x]$, preserving the accurate representation and distributional properties essential for downstream policy analysis.
+We evaluate four deep learning approaches, each representing a distinct paradigm for conditional density estimation: RealNVP, Mixture Density Networks, TabSyn, and TabPFN. The first three are generative models that explicitly learn to sample from conditional distributions, while TabPFN is a transformer-based foundation model that uses in-context learning to perform probabilistic prediction. As a baseline, we include Quantile Random Forests (Section~\ref{sec:qrf}), which prior work established as the best-performing traditional method for this task. For notational convenience, let $x$ denote the vector of covariates (demographic and income variables) and $y$ the target variable (net worth). All methods share the goal of learning $p(y \mid x)$ rather than just $\mathbb{E}[y \mid x]$, preserving the accurate representation and distributional properties essential for downstream policy analysis.
 
 \subsection{RealNVP (Normalizing Flows)}
 \label{sec:realnvp}
@@ -233,6 +233,86 @@ We use the official TabSyn codebase from \citet{zhang2023mixed} with our custom 
 \end{itemize}
 
 For imputation, we run 30 independent trials and average the results to reduce variance. Each CPS record is processed in batches of 2048 for computational efficiency. The target variable is initialized with random samples from the SCF target distribution (weighted by survey weights) rather than zeros, which improves convergence.
+
+\subsection{TabPFN (Tabular Prior-data Fitted Network)}
+\label{sec:tabpfn}
+
+\subsubsection{Mathematical Foundation}
+
+TabPFN \citep{hollmann2023tabpfn} represents a fundamentally different approach to tabular prediction. Rather than learning model parameters from the training data through gradient-based optimization, TabPFN is a pre-trained transformer that performs in-context learning. Given a training dataset as input context, it directly outputs predictions for new query points without any task-specific parameter updates.
+
+At inference time, TabPFN conditions on the observed training data $(X_{\text{train}}, y_{\text{train}})$ and produces predictive distributions for test inputs $X_{\text{test}}$ in a single forward pass:
+\begin{equation}
+p(y \mid X_{\text{test}}, X_{\text{train}}, y_{\text{train}}) = \text{TabPFN}(X_{\text{test}}; X_{\text{train}}, y_{\text{train}})
+\end{equation}
+
+This approach effectively implements Bayesian model averaging over the prior distribution of possible data-generating mechanisms, learned during pre-training on synthetic datasets.
+
+\subsubsection{The TabPFN Prior: Structural Causal Models}
+
+TabPFN's power derives from its pre-training on approximately 100 million synthetic datasets generated through a carefully designed prior over structural causal models (SCMs). This prior generation process proceeds in four steps:
+
+\textbf{Step 1: Hyperparameter Sampling and Graph Construction.} For each synthetic dataset, high-level hyperparameters are first sampled from prior distributions. Based on these hyperparameters, a directed acyclic graph (DAG) is constructed representing the structural causal model. Each node in this computational graph holds a vector, and each edge implements a function according to one of several connection types (e.g., small neural networks, decision trees, linear transformations, discretization operations).
+
+\textbf{Step 2: Data Generation via Graph Propagation.} This step constitutes the core of the generative process and embodies the Bayesian inference framework. The SCM defines each node $Z_k$ through a structural equation:
+\begin{equation}
+Z_k = f_k(Z_{\text{Pa}_G(k)}, \varepsilon_k)
+\end{equation}
+where $Z_{\text{Pa}_G(k)}$ denotes the parent nodes of $Z_k$ in the graph $G$, $\varepsilon_k$ is an independent exogenous noise variable, and $f_k$ is a deterministic edge function that transforms inputs from parent nodes.
+
+The edge functions $f_k$ are sampled from a distribution over function classes, including:
+\begin{itemize}
+\item \textbf{Linear transformations}: $f_k(\mathbf{z}) = \mathbf{W}\mathbf{z} + \mathbf{b}$
+\item \textbf{Small neural networks}: Multi-layer perceptrons with randomly sampled architectures, activation functions, and weight initializations
+\item \textbf{Decision tree splits}: Threshold-based partitioning functions
+\item \textbf{Discretization operations}: Binning continuous values into categories
+\end{itemize}
+
+Data generation proceeds by first sampling noise variables $\varepsilon_k$ for all nodes and injecting them into root nodes. Values then propagate forward through the DAG: each non-root node computes its value by applying its edge function to the already-computed values of its parents. The intermediate representations are simply the computed vector values $Z_k$ at each internal node after this forward propagation. These representations encode progressively transformed versions of the original noise, with the graph structure determining the functional relationship between any two nodes.
+
+By sampling many different graph structures, edge functions, and noise realizations, TabPFN's prior covers a vast space of possible data-generating processes. Training the transformer to predict targets across all these synthetic datasets causes it to approximate the posterior predictive distribution (PPD), effectively performing Bayesian model averaging over the entire hypothesis space in a single forward pass.
+
+\textbf{Step 3: Feature and Target Extraction.} Once the flat prior of diverse data-generating processes has been encoded, feature positions $F$ and target positions $T$ are randomly sampled from among the graph nodes. The intermediate data representations at these sampled positions become the features $X$ and targets $y$ of the synthetic datasets.
+
+\textbf{Step 4: Post-processing.} The extracted data undergoes post-processing to enhance realism and complexity, including normalization, noise injection, and handling of missing values.
+
+This process generates diverse datasets spanning a wide range of functional relationships, from simple linear models to complex nonlinear interactions. By training on this distribution, TabPFN learns to approximate Bayesian inference over the space of possible tabular data-generating processes.
+
+\subsubsection{Two-Way Attention Architecture}
+
+To effectively capture long-range dependencies, TabPFN transforms input data into a three-dimensional tensor of shape $(N+1) \cdot (d+1) \cdot k$, where $N$ is the number of training samples, $d$ is the number of features, and $k$ is the embedding dimension. The additional dimensions account for the test sample and the target variable, respectively. Each cell in this tensor represents an embedded token for a specific (sample, feature) pair.
+
+The architecture employs a novel two-way attention mechanism that alternates between two types of self-attention:
+
+\textbf{Row Attention (Inter-Sample).} Each cell attends to the same feature across all other samples (its column). For feature $j$, the attention operates over the sequence $\{z_{1,j}, z_{2,j}, \ldots, z_{N+1,j}\}$:
+\begin{equation}
+\text{RowAttn}(Z)_{i,j} = \text{Attention}(z_{i,j}, \{z_{k,j}\}_{k=1}^{N+1})
+\end{equation}
+This enables the model to identify patterns in how a particular feature varies across samples, effectively learning feature-specific statistics and distributions.
+
+\textbf{Column Attention (Intra-Sample).} Each cell attends to the other features within its row (its sample). For sample $i$, the attention operates over the sequence $\{z_{i,1}, z_{i,2}, \ldots, z_{i,d+1}\}$:
+\begin{equation}
+\text{ColAttn}(Z)_{i,j} = \text{Attention}(z_{i,j}, \{z_{i,l}\}_{l=1}^{d+1})
+\end{equation}
+This facilitates feature interaction and dependency modeling within each sample, allowing the model to capture correlations between features.
+
+By alternating these attention types across multiple transformer layers, TabPFN achieves invariance to permutations in both sample and feature ordering while enabling rich information flow. The test sample's prediction emerges from cross-attention to training samples through the row attention mechanism, while feature interactions inform predictions through column attention. This architecture allows TabPFN to perform in-context learning by identifying which training samples are most relevant for each test prediction based on learned similarity patterns.
+
+\subsubsection{Full Distribution Modeling}
+
+For imputation tasks requiring stochastic samples rather than point predictions, TabPFN provides access to the full predictive distribution. The model outputs a parameterized distribution from which arbitrary quantiles can be extracted. For a given quantile $\tau$, the prediction is:
+\begin{equation}
+y_\tau = F^{-1}_{\text{pred}}(\tau)
+\end{equation}
+where $F_{\text{pred}}$ is the cumulative distribution function implied by TabPFN's output.
+
+To generate stochastic imputations that preserve distributional properties, we sample random quantiles $\tau \sim \text{Uniform}(0.01, 0.99)$ for each prediction and return the corresponding quantile value. This approach mirrors the stochastic sampling used by QRF and ensures that imputed values reflect uncertainty in the conditional distribution rather than collapsing to point estimates.
+
+\subsubsection{Implementation Details}
+
+We use TabPFN version 2.5, downloaded from HuggingFace via the \texttt{tabpfn} Python library. Due to memory constraints inherent to the transformer architecture, training is performed on a weighted subsample of 8,000 SCF observations. Weighted random sampling (proportional to survey weights) is used to preserve the distributional characteristics of the full training set.
+
+For imputation, predictions are generated in batches of 2,000 samples to manage memory. Each CPS record receives a random quantile drawn uniformly from $[0.01, 0.99]$, and the corresponding inverse CDF value is extracted from TabPFN's predictive distribution. This stochastic sampling ensures that the imputed distribution preserves variance and tail behavior rather than regressing toward the conditional mean.
 
 \subsection{Baseline: Quantile Random Forest}
 \label{sec:qrf}

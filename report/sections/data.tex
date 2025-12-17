@@ -5,17 +5,17 @@
 
 \subsection{Data Sources}
 
-This project addresses a fundamental challenge in economic and social science research more broadly. Many important analyses require detailed information at the household level, yet such data are often unavailable in large, representative surveys, instead being scattered across multiple specialized datasets with limited sample sizes. For example, in the United States, comprehensive wealth data exists only in specialized surveys that focus on wealthy households, while larger labor force surveys lack wealth measures entirely. Thus, this research explores deep learning techniques to impute net worth from the Survey of Consumer Finances (SCF) onto the Current Population Survey (CPS), comparing them to more traditional methods, to enable distributional analyses that require both detailed wealth information and large, representative samples.
+One challenge in economic research is obtaining large representative samples of household-level data. Many important analyses require detailed information at the household level, yet such data are often only available scattered across multiple specialized datasets with limited sample sizes. For example, in the United States, comprehensive wealth data exists only in specialized surveys that focus on wealthy households, while larger labor force surveys lack wealth measures entirely. Thus, this research explores deep learning techniques to impute net worth from the Survey of Consumer Finances (SCF) onto the Current Population Survey (CPS), comparing them to more traditional methods, to enable distributional analyses that require both detailed wealth information and large, representative samples.
 
 \subsubsection{Survey of Consumer Finances (SCF)}
 
 The Survey of Consumer Finances (SCF) is a triennial cross-sectional survey of U.S. families conducted by the Board of Governors of the Federal Reserve System \citep{bricker2017changes}. The SCF is the primary source of detailed household wealth data in the United States, providing comprehensive information on families' balance sheets, pensions, income, and demographic characteristics.
 
-The SCF employs a dual-frame sample design to address the highly skewed distribution of wealth. The first component is an area-probability sample providing broad population coverage. The second is a list sample developed from statistical records derived from tax returns under an agreement with the Statistics of Income (SOI) division of the IRS, which oversamples wealthy households to improve precision at the upper tail of the wealth distribution. The 2022 survey interviewed 4,595 families.
+The SCF employs a dual-frame sample design to address the power-law wealth distribution. The first component is an area-probability sample providing broad population coverage. The second is a list sample developed from statistical records derived from tax returns under an agreement with the Statistics of Income (SOI) division of the IRS, which oversamples wealthy households to improve precision at the upper tail of the wealth distribution. The 2022 survey interviewed 4,595 families.
 
 The SCF collects detailed information on all household assets and liabilities. Assets include primary residence, other real estate, businesses, vehicles, financial assets (checking, savings, money market accounts, CDs, bonds, stocks, mutual funds, retirement accounts, life insurance, and other managed assets), while liabilities capture mortgages, home equity loans, vehicle loans, education loans, credit card balances, and other consumer debt. Net worth is computed as total assets minus total liabilities.
 
-With the 4,595 families interviewed, the SCF creates five separate imputation replicates (implicates), resulting in 22,975 records in the public dataset. Each implicate contains different imputed values for missing data, allowing analysts to account for imputation uncertainty. This public dataset, with its latest version published for the year 2022, is the basis for our modeling efforts, employed as the donor dataset of net worth values.
+With the 4,595 families interviewed, the SCF creates five separate imputation replicates (implicates), resulting in 22,975 records in the public dataset. Each implicate contains different imputed values for missing data, generated using an iterative multiple imputation procedure known as stochastic relaxation \citep{kennickell1991imputation}, which draws from estimated conditional distributions via Gibbs sampling. This allows analysts to account for imputation uncertainty. This public dataset, with its latest version published for the year 2022, is the basis for our modeling efforts, employed as the donor dataset of net worth values.
 
 \subsubsection{Current Population Survey (CPS)}
 
@@ -49,7 +49,7 @@ race & Categorical & Race/ethnicity (multiple categories) \\
 \end{tabular}
 \end{table}
 
-The target variable is household net worth, defined as total assets minus total liabilities. Net worth presents modeling challenges due to its highly skewed distribution and the presence of negative values (households with debt exceeding assets). To address these issues, we apply the inverse hyperbolic sine (asinh) transformation:
+The target variable is household net worth, defined as total assets minus total liabilities. Net worth presents modeling challenges due to its right skewed distribution and the presence of negative values (households with debt exceeding assets). To address these issues, we apply the inverse hyperbolic sine (asinh) transformation:
 \begin{equation}
 \tilde{y} = \sinh^{-1}(y) = \log\left(y + \sqrt{y^2 + 1}\right)
 \end{equation}
@@ -72,7 +72,7 @@ The variables in both datasets are renamed to a common schema, and both datasets
 
 Both surveys contain sampling weights to ensure population representativeness (providing each observation with a weight that reflects its representation in the overall population). The SCF oversamples wealthy households, which makes weights essential for unbiased distributional estimates. We incorporate weights in two ways for distributional accuracy evaluation.  We employ weighted Wasserstein distances to compare imputed CPS distributions against the weighted SCF donor dataset, and use weighted resampling to visualize original and imputed net worth distributions, comparing their shapes once population representativeness is accounted for.
 
-Importantly, different models require different representations of categorical variables, including different preprocessing steps. RealNVP and MDN operate on continuous feature spaces and require one-hot encoding of categorical variables (gender, race), expanding the feature dimension. TabSyn, is designed for mixed-type tabular data, and thus accepts categorical variables in their original integer-coded form and learns embeddings internally. Additionally, numerical predictors are standardized (zero mean, unit variance) using statistics computed on the SCF training data.
+Importantly, different models require different representations of categorical variables, including different preprocessing steps. RealNVP, MDN, and TabPFN operate on continuous feature spaces and require one-hot encoding of categorical variables (gender, race), expanding the feature dimension. TabSyn is designed for mixed-type tabular data, and thus accepts categorical variables in their original integer-coded form and learns embeddings internally. Additionally, numerical predictors are standardized (zero mean, unit variance) using statistics computed on the SCF training data.
 
 \subsection{Exploratory Data Analysis}
 

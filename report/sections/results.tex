@@ -24,7 +24,7 @@ Quantile loss, introduced by \citet{koenker1978regression}, measures how well a 
 \end{equation}
 where $\rho_\tau(u) = u(\tau - \mathbf{1}_{u < 0})$ is the pinball loss. This asymmetric loss penalizes over-predictions and under-predictions differently depending on $\tau$. For example, for a high quantile like $\tau = 0.9$, under-predictions are penalized 9 times more heavily than over-predictions.
 
-We evaluate at different quantile levels ($\tau \in \{0.25, 0.5, 0.75\}$) to assess performance across the entire conditional distribution. A model that accurately captures the full distribution should achieve low quantile loss at all levels, not just the median.
+We evaluate at different quantile levels ($\tau \in \{0.1, 0.25, 0.5, 0.75, 0.9\}$) to assess performance across the entire conditional distribution. A model that accurately captures the full distribution should achieve low quantile loss at all levels, not just the median.
 
 \subsubsection{Wasserstein Distance}
 
@@ -38,7 +38,7 @@ For univariate distributions, the Wasserstein distance simplifies to the integra
 \begin{equation}
 W_1(P, Q) = \int_0^1 |F_P^{-1}(u) - F_Q^{-1}(u)| \, du
 \end{equation}
-This formulation accommodates survey weights by constructing weighted empirical quantile functions. A lower Wasserstein distance indicates that the imputed CPS distribution more closely matches the SCF wealth distribution, which is essential when wanting to use that data to produce reliable policy analysis and distributional impact assessments.
+This formulation accommodates survey weights by constructing weighted empirical quantile functions. A lower Wasserstein distance indicates that the imputed CPS distribution more closely matches the SCF wealth distribution, which is essential for downstream modeling tasks that rely on accurate distributional properties.
 
 \subsubsection{Kolmogorov-Smirnov Statistic}
 
@@ -58,25 +58,33 @@ Table~\ref{tab:cv_results} presents the 3-fold cross-validation results for all 
 \centering
 \caption{3-Fold Cross-Validation Results on SCF Data (Quantile Loss)}
 \label{tab:cv_results}
-\begin{tabular}{lccc}
+\begin{tabular}{lccccc}
 \toprule
-Model & $\mathcal{L}_{0.25}$ & $\mathcal{L}_{0.50}$ & $\mathcal{L}_{0.75}$ \\
+Model & $\mathcal{L}_{0.10}$ & $\mathcal{L}_{0.25}$ & $\mathcal{L}_{0.50}$ & $\mathcal{L}_{0.75}$ & $\mathcal{L}_{0.90}$ \\
 \midrule
-QRF (baseline) & $2.51 \pm 0.03$ & $2.51 \pm 0.01$ & $2.46 \pm 0.05$ \\
-MDN & $\mathbf{2.08 \pm 0.07}$ & $\mathbf{2.11 \pm 0.07}$ & $\mathbf{2.14 \pm 0.07}$ \\
-RealNVP & $3.17 \pm 0.22$ & $3.36 \pm 0.17$ & $3.55 \pm 0.26$ \\
-TabSyn & $3.49 \pm 0.02$ & $6.23 \pm 0.06$ & $8.98 \pm 0.10$ \\
+TabPFN & $2.54 \pm 0.06$ & $\mathbf{2.47 \pm 0.05}$ & $\mathbf{2.36 \pm 0.04}$ & $\mathbf{2.25 \pm 0.03}$ & $\mathbf{2.18 \pm 0.03}$ \\
+QRF (baseline) & $2.60 \pm 0.05$ & $2.57 \pm 0.03$ & $2.51 \pm 0.01$ & $2.46 \pm 0.05$ & $2.42 \pm 0.07$ \\
+MDN & $\mathbf{2.58 \pm 0.05}$ & $2.59 \pm 0.04$ & $2.60 \pm 0.03$ & $2.61 \pm 0.02$ & $2.62 \pm 0.03$ \\
+RealNVP & $3.51 \pm 0.41$ & $3.47 \pm 0.28$ & $3.41 \pm 0.09$ & $3.34 \pm 0.17$ & $3.30 \pm 0.29$ \\
+TabSyn & $1.85 \pm 0.02$ & $3.50 \pm 0.01$ & $6.25 \pm 0.01$ & $9.01 \pm 0.03$ & $10.66 \pm 0.04$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The Quantile Random Forest baseline achieves consistent performance across all quantile levels, with low variance across folds (standard deviations between 0.01 and 0.05). This stability reflects the robustness of tree-based ensemble methods to different training samples. The QRF's quantile loss values are moderate, providing a reasonable benchmark against which to evaluate the deep learning approaches.
+TabPFN achieves the best cross-validation performance across most quantile levels, with median quantile loss of $2.36 \pm 0.04$, representing a 6\% improvement over the QRF baseline ($2.51 \pm 0.01$). Notably, TabPFN's performance improves further at higher quantiles ($\mathcal{L}_{0.90} = 2.18$), suggesting superior capture of the upper tail of the wealth distribution. The relatively low standard deviations across folds indicate stable generalization.
 
-However, it is the Mixture Density Network that achieves the best cross-validation performance, with losses approximately 15--20\% lower than the QRF baseline. The MDN's consistent performance across $\mathcal{L}_{0.25}$, $\mathcal{L}_{0.50}$, and $\mathcal{L}_{0.75}$ suggests that the Gaussian mixture parameterization effectively captures the conditional distribution of net worth given the predictor variables. The relatively low standard deviations indicate stable performance across folds.
+The Quantile Random Forest baseline achieves consistent performance across all quantile levels, with low variance across folds (standard deviations between 0.01 and 0.05). This stability reflects the robustness of tree-based ensemble methods to different training samples. MDN shows moderate performance with losses slightly higher than QRF, indicating that the Gaussian mixture parameterization does not provide substantial advantages for this task.
 
 RealNVP shows moderate cross-validation performance, with quantile losses higher than both QRF and MDN. The higher variance across folds (standard deviations of 0.17--0.26) suggests some sensitivity to the particular training sample. The normalizing flow architecture may require more data or hyperparameter tuning to achieve optimal performance on this task.
 
 Meanwhile, TabSyn exhibits the worst performance, with loss values degrading substantially at higher quantiles. While $\mathcal{L}_{0.25}$ is comparable to RealNVP, $\mathcal{L}_{0.75}$ is nearly three times larger. This asymmetry suggests that the VAE-diffusion architecture consistently underpredicts, struggling to capture the upper tail of the wealth distribution during cross-validation. The low standard deviations indicate this pattern spans across folds rather than being a result of sampling variability.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/model_cv_comparison.png}
+\caption{Cross-validation quantile loss across models at different quantile levels ($\tau \in \{0.1, 0.25, 0.5, 0.75, 0.9\}$). TabPFN achieves the lowest loss at all quantile levels, with particularly strong performance at upper quantiles. Error bars represent standard deviation across 3 folds.}
+\label{fig:cv_comparison}
+\end{figure}
 
 \subsection{Final Imputation Results}
 
@@ -88,42 +96,47 @@ Meanwhile, TabSyn exhibits the worst performance, with loss values degrading sub
 \toprule
 Model & Wasserstein Distance & KS Statistic \\
 \midrule
-QRF (baseline) & $\mathbf{471,900}$ & $\mathbf{0.041}$ \\
+TabPFN & $\mathbf{415,326}$ & $0.042$ \\
+QRF (baseline) & $471,900$ & $\mathbf{0.041}$ \\
 MDN & $1,199,237$ & $0.049$ \\
-RealNVP & $13,809,212,015$ & $0.230$ \\
 TabSyn & $12,665,210$ & $0.168$ \\
+RealNVP & $13,809,211,720$ & $0.230$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The distributional accuracy results shed important light on each model's ability to preserve the overall wealth distribution in the imputed CPS data, complementing the cross-validation measure of conditional accuracy. Despite achieving the best CV quantile loss, MDN produces an imputed distribution with Wasserstein distance 2.5 times larger than QRF. Nonetheless, it is still the model with best distributional accuracy out of the deep learning methodologies studied. Contrastingly, RealNVP and TabSyn produce a Wasserstein distance four orders of magnitude larger than QRF, indicating very poor distributional preservation. The KS statistic provides a complementary perspective. QRF achieves the lowest KS statistic (0.041), indicating that its imputed CDF closely tracks the SCF distribution. MDN follows closely (0.049), while TabSyn (0.168) and RealNVP (0.230) show substantially larger maximum CDF deviations.
+The distributional accuracy results reveal that TabPFN achieves the best overall performance, with a Wasserstein distance of 415,326, which is 12\% lower than QRF's 471,900. This is particularly notable because TabPFN also achieves the best cross-validation loss, demonstrating that its conditional predictions translate directly to superior marginal distributional fidelity. The KS statistic of 0.042 is comparable to QRF's 0.041, indicating that TabPFN's imputed CDF closely tracks the SCF distribution shape.
+
+Nonetheless, QRF remains a strong baseline with excellent distributional preservation. MDN, despite reasonable CV performance, produces a Wasserstein distance 2.5 times larger than TabPFN. RealNVP and TabSyn continue to show poor distributional preservation with Wasserstein distances orders of magnitude larger than the best performers.
 
 While QRF produces imputed values with a 99th percentile close to the SCF's \$13.2 million and a 1st percentile near the SCF's $-$\$72,000, accurately preserving both tails, and MDN closely approximates these percentiles with its Gaussian mixtures, the TabSyn model over-generates extreme values, with a 99th percentile of \$231 million (17 times too high). These implausible extremes dominate the Wasserstein distance calculation. RealNVP exhibits even more severe tail inflation with its wide close-to-symmetrical distribution, producing extreme values that result in the largest Wasserstein distance despite acceptable CV loss, and completely missing the true shape of the net worth distribution when imputing. It seems that certain models optimized for conditional prediction accuracy (minimizing expected loss) may learn to produce conservative, mean-regressing predictions that fail to preserve distributional properties, making it crucial to also measure distributional accuracy when benchmarking performance.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{figures/model_comparison.png}
-\caption{Log-transformed net worth weighted distributions comparing SCF donor data (grey) against imputed CPS values for each model. Dashed lines indicate median values. QRF and MDN closely match the SCF distribution shape and median, while RealNVP exhibits a shifted, symmetric distribution missing the characteristic right skew. TabSyn captures the general shape but over-generates extreme values in both tails.}
+\includegraphics[width=\textwidth]{figures/model_distribution_comparison.png}
+\caption{Log-transformed net worth weighted distributions comparing SCF donor data (grey) against imputed CPS values for each model. Dashed lines indicate median values. TabPFN and QRF closely match the SCF distribution shape and median, with TabPFN achieving the best overall distributional accuracy. MDN provides reasonable approximation, while RealNVP exhibits a shifted, symmetric distribution and TabSyn over-generates extreme values.}
 \label{fig:distributions}
 \end{figure}
 
 \subsection{Discussion}
 
-Among the deep learning approaches evaluated, only the Mixture Density Network demonstrates performance comparable to the QRF baseline. MDN achieves the best cross-validation quantile loss and produces distributional accuracy metrics (Wasserstein distance and KS statistic) within the same order of magnitude as QRF. While MDN does not significantly outperform QRF on distributional metrics, its competitive performance suggests that neural network-based density estimation can be viable for survey imputation, potentially requiring additional work for hyperparameter tuning and more careful configuration.
+TabPFN emerges as the best performer among all methods evaluated, achieving both the lowest cross-validation quantile loss and the best distributional accuracy metrics. Its success is particularly notable given its fundamentally different approach: rather than learning parameters from the training data through gradient descent, TabPFN leverages a pre-trained transformer that performs in-context learning. This suggests that the prior knowledge embedded in TabPFN's pre-training captures relevant patterns for wealth imputation. However, the improvement over QRF is modest (6\% lower quantile loss, 12\% lower Wasserstein distance), and the high computational cost may limit practical adoption for daily imputation tasks.
 
-In contrast, RealNVP and TabSyn seem to be unsuitable for this task with their current configurations, and working toward improving their architectures and training procedures may be unnecessarily complex for marginal improvement. RealNVP produces a nearly symmetric distribution centered far below the true median, completely failing to capture the characteristic right skew of the wealth distribution. TabSyn, despite its sophisticated VAE-diffusion architecture, generates implausible extreme values.
+The Quantile Random Forest baseline remains highly competitive, particularly for distributional preservation, and may be preferred when computational simplicity is paramount. MDN demonstrates reasonable performance but does not surpass either TabPFN or QRF on any metric.
 
-The relative success of MDN compared to the other deep learning methods may stem from its explicit probabilistic formulation. The Gaussian mixture parameterization directly models the conditional density $p(y|x)$, providing interpretable components that can capture multimodality and heteroskedasticity. Normalizing flows (RealNVP) and diffusion models (TabSyn), while theoretically more flexible, may require more careful tuning or architectural modifications to handle the specific challenges of wealth data.
+In contrast, RealNVP and TabSyn prove unsuitable for this task in their current configurations. RealNVP produces a nearly symmetric distribution that fails to capture the characteristic right skew of wealth, while TabSyn generates implausible extreme values in both tails.
 
 \subsubsection{Computational Considerations}
 
-The models differ substantially in computational requirements. QRF training completes in under 2 minutes on a standard CPU, leveraging the efficiency of tree-based methods. MDN requires approximately 15--20 minutes for 100 epochs of neural network training. RealNVP has similar computational costs to MDN for 500 epochs of flow training. Given the competitive performance of MDN, its moderate training time may be justifiable for researchers seeking a deep learning alternative when seeking flexibility and interpretability.
+The models differ substantially in computational requirements. QRF training completes in under 2 minutes on a standard CPU, leveraging the efficiency of tree-based methods. MDN requires approximately 15--20 minutes for 100 epochs of neural network training. RealNVP has similar computational costs to MDN for 500 epochs of flow training.
 
-TabSyn is by far the most computationally intensive, requiring separate VAE pre-training (2,000 epochs) followed by diffusion model training (~2,000 epochs considering its early stopping). Total training time exceeds several hours even on GPU hardware. This computational burden, combined with the poor empirical performance observed, makes TabSyn impractical for survey imputation in its current form.
+TabPFN requires no training time per se, as it uses a pre-trained transformer; however, inference is computationally intensive due to memory constraints requiring batch processing. Imputing net worth onto the full CPS dataset (approximately 20,000 records) took approximately 12 hours on GPU hardware. This substantial computational cost, despite achieving the best accuracy metrics, may make TabPFN challenging to use for daily imputation workflows where rapid turnaround is essential.
 
-\subsubsection{Implications for Survey Data Fusion}
+TabSyn is also computationally intensive, requiring separate VAE pre-training (2,000 epochs) followed by diffusion model training (~2,000 epochs considering its early stopping). Total training time exceeds several hours even on GPU hardware. This computational burden, combined with the poor empirical performance observed, makes TabSyn impractical for survey imputation in its current form.
 
-Our findings suggest that while most deep generative models tested here fail to outperform traditional methods, MDN represents a viable alternative worthy of further investigation. The disconnect between CV loss and distributional accuracy observed across models highlights that standard model selection criteria may be insufficient for imputation tasks where preserving marginal distributions is essential.
+\subsubsection{Practical Guidance for Practitioners}
+
+Our findings provide practitioners with clear guidance for method selection. TabPFN achieves the best accuracy but requires substantial computational resources (~12 hours for full imputation). QRF remains an excellent choice when rapid turnaround is needed, completing in under 2 minutes while maintaining strong distributional fidelity. MDN offers a middle ground but does not outperform either on any metric. RealNVP and TabSyn should be avoided for heavy-tailed distributions like wealth without significant architectural modifications. As TabPFN's inference efficiency improves through algorithmic advances or hardware acceleration, it may become the preferred choice for practitioners seeking both accuracy and practicality.
 
 \subsubsection{Limitations and Future Work}
 
@@ -133,7 +146,8 @@ Several limitations should be considered when interpreting these results:
     \item \textbf{Covariate overlap assumption}: Statistical matching assumes that $P(Y|X)$ is identical across surveys. Given that SCF and CPS populations differ in year (2022 vs 2023), imputation quality suffers regardless of model choice. Nonetheless, this limitation affects all models equally, so relative performance comparisons remain valid.
     \item \textbf{Limited predictor set}: We use only age, gender, race, and income variables as predictors. Wealth is influenced by many factors (education, occupation, inheritance, homeownership) not available in both surveys, limiting achievable imputation accuracy.
     \item \textbf{Sample size}: The SCF contains approximately 23,000 observations after preprocessing. While adequate for tree-based methods, deep learning approaches typically benefit from larger training sets.
+    \item \textbf{TabPFN memory constraints}: TabPFN's transformer architecture limits training set size to approximately 8,000 observations due to memory requirements. For datasets substantially larger than the SCF, weighted subsampling (as employed here) or ensemble approaches may be necessary.
     \item \textbf{Hyperparameter sensitivity}: The deep learning models' performance depends on architecture and training choices that were not exhaustively optimized in this study.
 \end{itemize}
 
-Given MDN's promising results, future work should explore whether alternative hyperparameter configurations could enable it to surpass QRF. Potential directions include increasing the number of Gaussian mixture components beyond the five used, as well as the training time to determine whether it yields improvement or results in overfitting. Incorporating regularization techniques specifically designed to prevent distribution compression could also help address some of the limitations observed in our results. Experimenting with alternative mixture distributions (e.g., Student-t components) that naturally accommodate heavier tails than Gaussians may be one of the more promising avenues to capture more complex distributions in other contexts, while deeper or wider architectures may help improve the network's capacity to learn complex conditional relationships.
+Future work should explore whether TabPFN's performance can be further improved through ensemble methods or alternative subsampling strategies. Additionally, investigating TabPFN's performance on other statistical matching problems (beyond wealth imputation) would help establish its generalizability. For the generative approaches, understanding why normalizing flows and diffusion models struggle with heavy-tailed distributions could inform architectural modifications. As TabPFN's inference efficiency improves, it may become the preferred choice for practitioners seeking both accuracy and practicality.

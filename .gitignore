@@ -16,11 +16,7 @@ dist/
 *.egg-info/
 
 # CSV files
-realnvp_imputed_networth.csv
-mdn_imputed_networth.csv
-tabsyn_imputed_networth.csv
-qrf_imputed_networth.csv
-qrf_cv_results.csv
+*.csv
 
 code.pdf
 
